@@ -8,3 +8,5 @@
   - My Ney
   - ResNet50
   - AlexNet
+#### 7.14
+- 单个手写数字识别：->  ResNet18.ipynb
