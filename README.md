@@ -12,3 +12,7 @@
 #### 7.14
 - 单个手写数字识别：->  ResNet18.ipynb
   - standard framework for finetuning and predicting
+#### 7.17
+- 连续手写数字识别：-> MultiDigit.ipynb
+  - Generate Multiple Digits Dataset
+  - Segement every single digit
