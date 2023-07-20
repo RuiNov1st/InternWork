@@ -1,18 +1,8 @@
 # InternWork
 ---
-#### 7.12
-- Pytorch是什么
-- HelloWorld项目运行 -> HelloWorld.ipynb
-#### 7.13
-- 单个手写数字识别：-> MNIST.ipynb
-  - My Net
-  - ResNet18: w.ft
-  - ResNet50  wo.ft
-  - AlexNet  w.ft
-#### 7.14
-- 单个手写数字识别：->  ResNet18.ipynb
-  - standard framework for finetuning and predicting
-#### 7.17
-- 连续手写数字识别：-> MultiDigit.ipynb
-  - Generate Multiple Digits Dataset
-  - Segement every single digit
+### L2 HelloWorld 
+L2_HelloWorld
+### L3 单个手写数字识别
+L3_SingleDigitClassification
+### L4 连续手写数字识别
+L4_MultiDigitClassification
