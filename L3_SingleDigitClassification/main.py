@@ -153,7 +153,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size',type=int,default=64,help='batch-szie')
     parser.add_argument('--dataset',type=str,default='MNIST',help='dataset')
     parser.add_argument('--data_path',type=str,default='./data/',help='data path')
-    parser.add_argument('--weight_path',type=str,default='./checkpoints/resnet18-f37072fd.pth', help='pretrained weights')
+    parser.add_argument('--weight_path',type=str,default=None, help='pretrained weights')
     parser.add_argument('--save_model_path',type=str,default='./checkpoints/resnet18_ft.pth', help='save model after finetuning')
     parser.add_argument('--epoch',type=int,default=10)
     parser.add_argument('--learning_rate',type=float,default=0.001)

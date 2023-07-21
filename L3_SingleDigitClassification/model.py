@@ -12,8 +12,8 @@ class ResNet18(nn.Module):
             resnet18_weights = torch.load(weight_path)
             self.resnet18.load_state_dict(resnet18_weights)
         else:
-            self.resnet18 = models.resnet18(pretrained=True)
-        self.transform = models.ResNet18_Weights.DEFAULT.transforms() # ResNet18默认数据处理方法
+            self.resnet18 = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+        self.transform = models.ResNet18_Weights.DEFAULT.transforms(antialias=True) # ResNet18默认数据处理方法
 
     # modify parameters for finetune:
     def finetune_modify(self):
