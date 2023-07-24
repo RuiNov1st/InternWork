@@ -84,15 +84,19 @@ def predict(model,test_dataloader,use_cuda):
     print("Acc in test dataset: {}%".format(acc))
 
 # show predict
-def predictv2(model,model_trans,test_path):
+def predictv2(model,test_path):
     # read img:
     img = cv2.imread(test_path)
     img = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    if img.shape[0]!=28:
+        _,binary = cv2.threshold(img,100,255,cv2.THRESH_BINARY_INV)
+        size = (28,28)
+        img = cv2.resize(binary,size,interpolation=cv2.INTER_AREA)
     # transform:
     transform = transforms.Compose(
         [transforms.ToTensor(),
          transforms.Lambda(lambda x:x.repeat(3,1,1)), # ResNet18要求输入图形为3通道，需将单通道设置为3通道
-         model_trans]
+         transforms.Resize(224)]
     )
     img = transform(img)
 
@@ -111,7 +115,7 @@ def run_experiment(args):
 
     # get data
     if args.dataset=='MNIST':
-        train_dataset,test_dataset = get_MNIST(args,model.transform)
+        train_dataset,test_dataset = get_MNIST(args)
     train_dataloader,test_dataloader = get_dataloader(train_dataset,test_dataset,args)
 
     # set GPU
@@ -122,18 +126,18 @@ def run_experiment(args):
     
     
     # only test
-    if args.test and os.path.exists(args.save_model_path) and not os.path.exists(args.predict_file):
+    if args.test and os.path.exists(args.save_model_path) and args.predict_file=='':
         if use_cuda:
             resnet18_ft = torch.load(args.save_model_path) 
             resnet18_ft.cuda()
         else :
             resnet18_ft = torch.load(args.save_model_path,map_location='cpu') 
         predict(resnet18_ft,test_dataloader,use_cuda)
-    elif args.test and not os.path.exists(args.save_model_path):
-        print("{} not exist, please check.".format(args.save_model_path))
     elif args.test and os.path.exists(args.save_model_path) and os.path.exists(args.predict_file):
         resnet18_ft = torch.load(args.save_model_path,map_location='cpu') 
-        predictv2(resnet18_ft,model.transform,args.predict_file)
+        predictv2(resnet18_ft,args.predict_file)
+    elif args.test and ((not os.path.exists(args.save_model_path)) or (not os.path.exists(args.predict_file))):
+        print("Path not exist, please check.")
     # finetune
     else:
         model.finetune_modify()

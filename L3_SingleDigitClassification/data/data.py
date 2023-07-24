@@ -10,11 +10,11 @@ from torch.utils.data import DataLoader
 
 
 # download MNIST and preprocess:
-def get_MNIST(args,model_trans):
+def get_MNIST(args):
     transform = transforms.Compose(
         [transforms.ToTensor(),
          transforms.Lambda(lambda x:x.repeat(3,1,1)), # ResNet18要求输入图形为3通道，需将单通道设置为3通道
-         model_trans]
+         transforms.Resize(224)]
     )
     train_dataset = datasets.MNIST(root=args.data_path,train=True,download=True,transform=transform)
     test_dataset = datasets.MNIST(root=args.data_path,train=False,download=True,transform=transform)
