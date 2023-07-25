@@ -1,2 +1,3 @@
 L3_SingleDigitClassification/checkpoints/resnet18-f37072fd.pth
 L3_SingleDigitClassification/data/MNIST
+L4_MultiDigitClassification/data/test
