@@ -16,7 +16,7 @@ def load_MNIST():
                                 transforms.Normalize(mean=0.1307,std=0.3081)]
     )
     # get Dataset
-    test_dataset = datasets.MNIST(root=r'D:\\InternWorkspace_wsr\\dataset',train=False,download=True,transform=transform)
+    test_dataset = datasets.MNIST(root=r'./data/',train=False,download=True,transform=transform)
     return test_dataset
 
 

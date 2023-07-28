@@ -2,9 +2,7 @@ from torchvision import transforms
 import numpy as np
 import os
 import cv2
-from torch.utils.data import Dataset
 import torch
-from torch.utils.data import DataLoader
 
 
 # load test image and target:
@@ -28,64 +26,140 @@ def get_transform():
     return transform
 
 
+# 基于MNIST数据集生成过程处理测试数据集
+def MNIST_process(img,h,w,origin_size=20,new_size=28):
+    # size normalized while preserving aspect ratio
+    factor = origin_size/max(h,w)
+    img_r = cv2.resize(img,(0,0),fx=factor,fy=factor)
+    img = np.zeros((origin_size,origin_size),dtype='uint8')
+    if img_r.shape[0]==origin_size:
+        offset = (origin_size-img_r.shape[1])//2
+        img[:,offset:offset+img_r.shape[1]] = img_r
+    elif img_r.shape[1]==origin_size:
+        offset = (origin_size-img_r.shape[0])//2
+        img[offset:offset+img_r.shape[0],:] = img_r
+    else:
+        y_offset = (origin_size-img_r.shape[0])//2
+        x_offset = (origin_size-img_r.shape[1])//2
+
+        img[y_offset:y_offset+img_r.shape[0],x_offset:x_offset+img_r.shape[1]] = img_r
+
+    # center of mass:
+    sum_intensity = 0
+    for x in range(origin_size):
+        for y in range(origin_size):
+            sum_intensity+=img[y,x]
+    sum_x = 0
+    for x in range(origin_size):
+        for y in range(origin_size):
+            sum_x+=x*img[y,x]
+    sum_y = 0
+    for y in range(origin_size):
+        for x in range(origin_size):
+            sum_y+=y*img[y,x]
+    
+    X_MassOfCenter = int(sum_x/sum_intensity)
+    Y_MassOfCenter = int(sum_y/sum_intensity)
+    
+    # center:
+    Center = origin_size//2
+    X_offset = Center - X_MassOfCenter
+    Y_offset = Center - Y_MassOfCenter
+    # new_img:
+    new_img = np.zeros((new_size,new_size),dtype='uint8')
+    start = (new_size-origin_size)//2
+    new_img[start:start+origin_size,start:start+origin_size] = img
+    # shift:
+    M = np.float32([[1,0,X_offset],[0,1,Y_offset]])
+    new_img = cv2.warpAffine(new_img,M,(new_img.shape[1],new_img.shape[0]))
+    
+    return new_img
+
+
+# 计算轮廓的外接矩形：
+def Rectangle_compute(contours):
+    cnt_rect = []
+    for cnt in range(len(contours)):
+        peri = cv2.arcLength(contours[cnt], True)  # 计算周长
+        approx = cv2.approxPolyDP(contours[cnt], 0.02 * peri, True)  # 计算有多少个拐角
+        x, y, w, h = cv2.boundingRect(approx)  # 得到外接矩形的大小，返回的是左上角坐标和矩形的宽高
+        cnt_rect.append([contours[cnt],x, y, w, h,w*h]) # [轮廓，x,y,w,h,矩形面积]
+    return cnt_rect
+
+
+# 合并轮廓
+def merge_Contours(cnt_sort):
+    last_x,last_w = 0,0
+    cnt_merge = []
+    for i in range(len(cnt_sort)):
+        if i == 0:
+            last_x = cnt_sort[i][1]
+            last_w = cnt_sort[i][3]
+            cnt_merge.append(cnt_sort[i])
+        else:
+            # 在x轴上存在交集：
+            if cnt_sort[i][1]<last_x+last_w:
+                # 轮廓拼接
+                cnt_merge[-1][0] = np.vstack((cnt_merge[-1][0],cnt_sort[i][0]))
+                # y,w,h，面积改变，x不用变
+                temp_h = cnt_merge[-1][2]
+                cnt_merge[-1][2] = min(cnt_merge[-1][2],cnt_sort[i][2]) # y取最上面那个
+                cnt_merge[-1][3] = max(cnt_merge[-1][1]+cnt_merge[-1][3],cnt_sort[i][1]+cnt_sort[i][3])-cnt_merge[-1][1] # w取最大
+                cnt_merge[-1][4] = max(temp_h+cnt_merge[-1][4],cnt_sort[i][2]+cnt_sort[i][4])-cnt_merge[-1][2] # h取最大
+                cnt_merge[-1][5] = cnt_merge[-1][3]*cnt_merge[-1][4] # 面积根据改变后的wh来计算
+                last_x = cnt_merge[-1][1] # x
+                last_w = cnt_merge[-1][3] # w
+            # 不存在交集
+            else:
+                last_x = cnt_sort[i][1]
+                last_w = cnt_sort[i][3]
+                cnt_merge.append(cnt_sort[i])
+    
+    return cnt_merge
+
 # seperate every single digit:
 def Segment(img,target):
+    length = len(target)
     Borderlist = []
-   
-    # 识别轮廓
     # cv2.RETR_EXTERNAL只检测外轮廓  cv2.CHAIN_APPROX_NONE存储所有的轮廓点
-    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)  # 检索外部轮廓
+    imgg = img.copy()
+    contours, hierarchy = cv2.findContours(imgg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)  # 检索外部轮廓
+    
+    # 计算外接矩形：
+    cnt_data = Rectangle_compute(contours)
 
-    contours = list(contours)
-    # 检查轮廓数量
-    # 若分割数量少于应分割数量，则认为分割失败
-    if len(contours)<len(target):
-        print("Can not Split Correctly!")
-        return []
-    #  若分割数量大于应分割数量，则认为分割了噪点，假设噪点小于数字轮廓，则按照轮廓大小排序去除噪点。
-    elif len(contours)>len(target):
-        areas = [cv2.contourArea(cnt) for cnt in contours]
-        contours_tuple = [(areas[i],contours[i]) for i in range(len(contours))]
-        contours_tuple = sorted(contours_tuple,key=lambda x:x[0],reverse=True)
-        contours = [cnt[1] for cnt in contours_tuple[:len(target)]]
+    # 若外接矩形之间存在交集，则需要进行轮廓合并：
+    # 对轮廓按外接矩形进行排序
+    cnt_sort = sorted(cnt_data,key=lambda z:(z[1],z[2]),reverse=False)
+    # 合并轮廓：若在x轴上有交集，则认为两个轮廓可以合并
+    cnt_merge = merge_Contours(cnt_sort)
 
-    # 加入边框
-    for cnt in contours:
-        # 计算矩形
-        peri = cv2.arcLength(cnt, True)  # 计算周长
-        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)  # 计算有多少个拐角
-        x, y, w, h = cv2.boundingRect(approx)  # 得到外接矩形的大小，返回的是左上角坐标和矩形的宽高
+    # 合并轮廓之后轮廓少于给定数量
+    if len(cnt_merge)<length:
+        print("Wrong Segment!")
+        return 
+    # 合并轮廓之后轮廓多于给定数量，按面积排序去除多余的
+    if len(cnt_merge)>length:
+        cnt_merge = sorted(cnt_merge,key=lambda z:z[5],reverse=True)
+        cnt_merge = cnt_merge[:length]
+
+    cnt_data = cnt_merge
+    
+    for cnt in cnt_data:
+        x,y,w,h = cnt[1],cnt[2],cnt[3],cnt[4]
+        fix_size=28
+
         # 最小边框框出来的图形：
         imgGet = img[y:y + h, x:x + w]
         
-        # resize：
-        # 若图片较大，则不应resize为MNIST数据集大小，否则失真。
-        if imgGet.shape[0]*imgGet.shape[1] > 22500:
-            imgGet = cv2.resize(imgGet,(150,150))
-            size = 224
-            h,w = 150,150
-        else: # 按照MNIST数据集尺寸Resize
-            size = 28
-            
-        # 需要往外扩边框
-        top = max(0,(size-h)//2)
-        bottom = max(0,size-top-h)
-        left = max(0,(size-w)//2)
-        right = max(0,size-w-left)
-
-        # 补齐为正方形
-        # 相应方向上的边框宽度：top bottom left right
-        imgGet = cv2.copyMakeBorder(imgGet, top, bottom, left,right, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-        xx = x - left
-        yy = y - top
-        ss = size
-        if imgGet.shape[0]!=28:
-            imgGet = cv2.resize(imgGet,(28,28))
-        Temptuple = (imgGet, xx, yy, ss)  # 将图像及其坐标放在一个元组里面，然后再放进一个列表里面就可以访问了
+        imgGet = MNIST_process(imgGet,h,w)
+        
+        Temptuple = (imgGet, x,y,fix_size)  # 将图像及其坐标放在一个元组里面，然后再放进一个列表里面就可以访问了
         Borderlist.append(Temptuple)
-
+        
     # 对Borderlist按照数字顺序排序：
-    Borderlist =  sorted(Borderlist,key=lambda x:(x[1],x[2]))
+    Borderlist =  sorted(Borderlist,key=lambda x:(x[1]))
+    
     
     return Borderlist
 

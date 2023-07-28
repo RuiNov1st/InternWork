@@ -5,6 +5,8 @@ import os
 import cv2
 from data.data import Read_MultipleDigit,data_process
 from data.generate import generate
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def test(model,test_data,test_targets,use_cuda):
@@ -52,6 +54,19 @@ def test(model,test_data,test_targets,use_cuda):
         single_count+=i*correct_list[i]
     single_acc  = single_count/(len(test_data[0])*len(test_targets))
     print("Single Digit Acc:{}%".format(single_acc*100))
+
+    # save picture:
+    fig = plt.figure()
+    plt.bar(np.arange(0,len(correct_list),1),correct_list)
+    plt.title("Correct Distribution")
+    plt.ylabel("Count")
+    plt.xlabel("Digits")
+    plt.xticks([i for i in range(0,len(correct_list),2)])
+    for i,j in zip(np.arange(0,len(correct_list),1),correct_list):
+        if correct_list[i] !=0:
+            plt.text(i,j+1,j,ha='center')
+    plt.savefig('Correct_Distribution.png')
+    plt.close(fig)
 
 # use handwrite img to test:
 def testv2(args):
