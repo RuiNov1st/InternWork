@@ -28,6 +28,9 @@ def get_transform():
 
 # 基于MNIST数据集生成过程处理测试数据集
 def MNIST_process(img,h,w,origin_size=20,new_size=28):
+    # check if new_size > origin_size:
+    if new_size <= origin_size:
+        raise ValueError("New size should be bigger than origin size. Please check the values.")
     # size normalized while preserving aspect ratio
     factor = origin_size/max(h,w)
     img_r = cv2.resize(img,(0,0),fx=factor,fy=factor)
@@ -119,7 +122,6 @@ def merge_Contours(cnt_sort):
 
 # 噪点合并与拼接
 # 假设手写数字的高度相同，我们认为小于1/3平均高度的轮廓是噪点
-
 # 找到距离噪点最近的非噪点图像，用于将噪点合并
 def find_zero(arr_list,idx,left=True):
     if left:
@@ -144,7 +146,7 @@ def remove_noise(cnt_merge):
 
     # 先标记噪点
     for cnt in range(len(cnt_merge)):
-        # 小于2/3平均高度的值是噪点
+        # 小于1/3平均高度的值是噪点
         if cnt_merge[cnt][4]<threshold:
             merge_idx[cnt] = 1 # 噪点
     
@@ -222,16 +224,6 @@ def remove_noise(cnt_merge):
 
 
 # 形态学方法：
-# 开运算：先腐蚀后膨胀
-def Open_operation(img,kernel):
-    open = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel)
-    return open
-
-# 闭运算：先膨胀后腐蚀
-def Closed_operation(img,kernel):
-    closed = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
-    return closed
-
 # 腐蚀运算
 def Erode_operation(img,kernel,iter=1):
     eroded = cv2.erode(img,kernel,iterations=iter)
@@ -252,56 +244,6 @@ def morph(img):
     data = Dilate_operation(data,kernel2,1)
     return data
 
-
-
-# seperate every single digit: fixed length
-def Segment(img,target):
-    length = len(target)
-    Borderlist = []
-    # cv2.RETR_EXTERNAL只检测外轮廓  cv2.CHAIN_APPROX_NONE存储所有的轮廓点
-    imgg = img.copy()
-    contours, hierarchy = cv2.findContours(imgg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)  # 检索外部轮廓
-    
-    # 计算外接矩形：
-    cnt_data = Rectangle_compute(contours)
-
-    # 若外接矩形之间存在交集，则需要进行轮廓合并：
-    # 对轮廓按外接矩形进行排序
-    cnt_sort = sorted(cnt_data,key=lambda z:(z[1],z[2]),reverse=False)
-    # 合并轮廓：若在x轴上有交集，则认为两个轮廓可以合并
-    cnt_merge = merge_Contours(cnt_sort)
-
-    # 合并轮廓之后轮廓少于给定数量
-    if len(cnt_merge)<length:
-        print("Wrong Segment!")
-        return 
-    # 合并轮廓之后轮廓多于给定数量，按面积排序去除多余的
-    if len(cnt_merge)>length:
-        cnt_merge = sorted(cnt_merge,key=lambda z:z[5],reverse=True)
-        cnt_merge = cnt_merge[:length]
-
-    cnt_data = cnt_merge
-    
-    for cnt in cnt_data:
-        x,y,w,h = cnt[1],cnt[2],cnt[3],cnt[4]
-        fix_size=28
-
-        # 最小边框框出来的图形：
-        imgGet = img[y:y + h, x:x + w]
-        
-        imgGet = MNIST_process(imgGet,h,w)
-        
-        Temptuple = (imgGet, x,y,fix_size)  # 将图像及其坐标放在一个元组里面，然后再放进一个列表里面就可以访问了
-        Borderlist.append(Temptuple)
-        
-    # 对Borderlist按照数字顺序排序：
-    Borderlist =  sorted(Borderlist,key=lambda x:(x[1]))
-
-    transform = get_transform()
-    Borderlist = [transform(x[0]) for x in Borderlist]
-            
-    
-    return Borderlist
 
 # seperate every single digit: variable length
 def Segment_variable(img):
@@ -334,9 +276,10 @@ def Segment_variable(img):
         imgGet = img[y:y + h, x:x + w]
         imgGet_list.append(imgGet) # 未处理之前先保存
     
-        size=28
-        imgGet = MNIST_process(imgGet,h,w,origin_size=20,new_size=28)
-        xx,yy,ss = x,y,size
+        origin_size = 20
+        new_size = 28
+        imgGet = MNIST_process(imgGet,h,w,origin_size,new_size)
+        xx,yy,ss = x,y,new_size
         Temptuple = (imgGet, xx, yy, ss)  # 将图像及其坐标放在一个元组里面，然后再放进一个列表里面就可以访问了
         Borderlist.append(Temptuple)
         
@@ -350,108 +293,28 @@ def Segment_variable(img):
 
 # data process:
 # including segment and preprocess
-def data_process(data,targets,handwrite=False,fixed_length=True):
+def data_process(data,targets,handwrite=False):
     # 手写图片：
     if handwrite:
-        target_a = np.array([int(i) for i in targets])
-        targets = torch.tensor(target_a)
+        digit_target = np.array([int(i) for i in targets])
 
         img = data
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         _,img = cv2.threshold(img,100,255,cv2.THRESH_BINARY_INV)
 
-        # 固定长度识别
-        if fixed_length:
-            Borderlist = Segment(img,targets)
-            return Borderlist,targets
-        # 可变长度：
-        else:
-            Borderlist,imgGet_list = Segment_variable(img)
-            return Borderlist,targets,imgGet_list
+        digit_data,miniimg_list = Segment_variable(img)
     else:
         digit_data = []
-        targets_n = []
         miniimg_list = []
+        digit_target = targets
         for i in range(data.shape[0]):
             img = data[i]
             # to gray:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             # segment:
-            if fixed_length:
-                Borderlist = Segment(img,targets[i])
-            else:
-                Borderlist,imgGet_list = Segment_variable(img)
-                miniimg_list.append(imgGet_list)
-
+            Borderlist,imgGet_list = Segment_variable(img)
             digit_data.append(Borderlist)
-        if fixed_length:
-            targets = torch.tensor(targets)
-            return digit_data,targets
-        else:
-            return digit_data,targets,miniimg_list
+            miniimg_list.append(imgGet_list)
+            
+    return digit_data,digit_target,miniimg_list
         
-        
-    # # 固定长度识别
-    # if fixed_length:
-    #     if handwrite:
-    #         target_a = np.array([int(i) for i in targets])
-    #         targets = torch.tensor(target_a)
-
-    #         img = data
-    #         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    #         _,img = cv2.threshold(img,100,255,cv2.THRESH_BINARY_INV)
-    #         Borderlist = Segment(img,targets)
-    #         # transform:
-    #         if len(Borderlist)!=0:
-    #             Borderlist = [transform(x[0]) for x in Borderlist]
-            
-    #         return Borderlist,targets
-    #     else:
-    #         digit_data = []
-    #         targets_n = []
-    #         for i in range(data.shape[0]):
-    #             img = data[i]
-    #             # to gray:
-    #             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    #             # segment:
-    #             Borderlist = Segment(img,targets[i])
-    #             # transform:
-    #             if len(Borderlist)!=0:
-    #                 Borderlist = [transform(x[0]) for x in Borderlist]
-    #                 digit_data.append(Borderlist)
-    #                 targets_n.append(targets[i]) # 防止轮廓分割错误
-    #         targets = np.array(targets_n)
-    #         targets = torch.tensor(targets)
-    #         return digit_data,targets
-    # else:
-    #     # 可变长度识别
-    #     if handwrite:
-    #         digit_target = np.array([int(i) for i in targets])
-            
-    #         img = data
-    #         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    #         _,img = cv2.threshold(img,100,255,cv2.THRESH_BINARY_INV)
-    #         Borderlist,imgGet_list = Segment_variable(img)
-            
-    #         # transform:
-    #         Borderlist = [transform(x[0]) for x in Borderlist]
-            
-    #         return Borderlist,digit_target,imgGet_list
-    #     else:
-    #         digit_data = []
-    #         digit_target = []
-    #         miniimg_list = []
-    #         for i in range(data.shape[0]):
-    #             img = data[i]
-    #             # to gray:
-    #             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    #             # segment:
-    #             Borderlist,imgGet_list = Segment_variable(img)
-    #             Borderlist = [transform(x[0]) for x in Borderlist]
-
-    #             digit_data.append(Borderlist)
-    #             digit_target.append(targets[i])
-    #             miniimg_list.append(imgGet_list)
-
-    #         return digit_data,digit_target,miniimg_list
-    
